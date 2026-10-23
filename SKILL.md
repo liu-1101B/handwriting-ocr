@@ -1067,62 +1067,11 @@ PaddleOCR 的**同模型 ONNX 版 `rapidocr`** 在本路线实测可用：CPU、
 
 ## 附：给 AI 工具配置代理（OCR 流程常需要的外网能力）
 
-> OCR 本身可离线，但以下场景会触发外网依赖：拉取模型/权重、安装依赖、调用云 OCR API、以及让 agent 在识别流程中查资料。
-> 下面这套是 2026-10 在 Windows + Clash 环境实测跑通的配置，含三个会让你误判的坑。
-
-### 1. 先分清"谁在走代理"
-
-代理生效有三条互不相同的路径，**不能互相替代**：
-
-| 通道 | 认什么 | 说明 |
-|---|---|---|
-| Node / Electron 应用（DSH、Playwright 等） | `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` 环境变量 | 启动时读取，**改完必须重启进程** |
-| 浏览器内核（Playwright 拉起的 Chrome） | `--proxy-server=<url>` 启动参数 | **不读环境变量**；除非系统开了 TUN 透明代理 |
-| `curl` / `git` / `pip` 等命令行 | `ALL_PROXY`（或各自参数） | pip 可用 `--proxy` / `PIP_INDEX_URL` |
-
-### 2. 最小可用配置（Windows 用户级）
-
-```powershell
-# 127.0.0.1:7890 换成你自己的混合端口（Clash 常见 7890 / 6789）
-$p = 'http://127.0.0.1:7890'
-[Environment]::SetEnvironmentVariable('HTTP_PROXY',  $p, 'User')
-[Environment]::SetEnvironmentVariable('HTTPS_PROXY', $p, 'User')
-[Environment]::SetEnvironmentVariable('ALL_PROXY',   $p, 'User')
-[Environment]::SetEnvironmentVariable('NODE_USE_ENV_PROXY', '1', 'User')   # 见坑 2
-[Environment]::SetEnvironmentVariable('NO_PROXY',
-  '127.0.0.1,localhost,::1,<你的模型/API域名>', 'User')                      # 见坑 1
-```
-
-- 只对当前窗口生效：`$env:HTTPS_PROXY='http://127.0.0.1:7890'`（关窗口即失效）。
-- 支持 `.env` 的工具（如 DSH）：写进 **harness home 的 `.env`**（如 `~/.dsh/.env`），**不要写在项目目录**——后者的 `.env` 通常被视为不可信来源而忽略。
-
-### 3. 三个会让你误判的坑
-
-1. **`NO_PROXY` 不排除模型/API 域名 = 自己把命脉送进代理**。症状不是"代理不通"，而是**模型调用报 transport error、连接抖动**。所有需要直连的关键域名（尤其国内可直连的 API）都必须进 `NO_PROXY`。工具出网走代理、关键连接直连，**必须分开**。
-2. **Node 的内置 `fetch` 不读 `HTTPS_PROXY`**。只设代理变量时，Google 等目标仍会 `ECONNRESET`；加 `NODE_USE_ENV_PROXY=1` 才真正生效。**判断代理是否生效，要用真的走代理的 HTTP 客户端去测。**
-3. **不要用 `pwsh` 里的 `curl.exe` 判断 HTTPS 可达性**。某些环境（特定 TLS 后端/沙箱）里它对所有 HTTPS 目标都返回 `000`，**连直连可达的站点也失败**——这是 shell 假象，不是网络结论。用 Node fetch / Python requests / 真实浏览器复核。
-
-### 4. 验证与诊断（照抄可用）
-
-```bash
-# 1) 代理端口是否活着
-curl -x http://127.0.0.1:7890 -o NUL -w "%{http_code}\n" http://www.gstatic.com/generate_204   # 期望 204
-
-# 2) 出口是否真的变了（对比直连与走代理）
-curl -x http://127.0.0.1:7890 http://api.ip.sb/ip
-curl http://api.ip.sb/ip
-
-# 3) 哪些环境变量在生效（Clash 控制器，若开了 external-controller）
-curl http://127.0.0.1:9090/configs     # mode / tun / mixed-port
-curl http://127.0.0.1:9090/connections # 当前每条连接走哪个出口、谁在用
-```
-
-### 5. 三个判断纪律（踩坑得来）
-
-- **"失败"要重试至少 3 次再下结论**。海外节点抖动时，同一端点会一轮 4/4 通、下一轮 0/4。失败若成簇落在**固定耗时点**（如 ~500ms 同时复位），先怀疑出口节点，而不是自己的配置。
-- **别用子进程的结果给代理下结论**。沙箱/受限 shell 里的子进程有独立网络限制（例如 TLS 被拦、GUI 程序无法启动），**既不能证明通，也不能证明不通**。判据要用最终使用该网络的那个进程去测。
-- **全局代理与 TUN 会波及一切**：某些游戏/反作弊/银行客户端会把"出口 IP 变化"或"存在其他网络层驱动"当成异常而拒绝启动。**遇到"开代理就起不来、关代理就好"的软件，优先怀疑它**，而不是软件本身损坏——这是 2026-10 在真实游戏启动故障上被用户对照实验验证过的。
-
+> 这一节已独立成库，内容更完整（四条通道区分、六个误判坑、故障树、两个真实案例复盘、体检脚本）：
+> **https://github.com/liu-1101B/ai-proxy-setup**
+>
+> 与本仓库的关系：OCR 流程本身可离线；只有拉模型/装依赖/调云 API 时需要外网，
+> 那时按上面那个库的「最小可用配置」+「NO_PROXY 隔离」两节做即可。
 
 ---
 
