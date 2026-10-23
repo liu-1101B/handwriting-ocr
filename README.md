@@ -32,6 +32,10 @@ submit_correction(
 pip install paddlepaddle paddleocr pyyaml opencv-python-headless pillow
 ```
 
+## 实战验证
+
+真实手写本（61 页 / 约 2.3 万字）实测结论、质量门槛与已知限制见 [SKILL.md](SKILL.md) 的「实战经验」一节；给 AI 工具配置代理见同文件附录。
+
 ## 详细文档
 
 参见 [SKILL.md](SKILL.md)
